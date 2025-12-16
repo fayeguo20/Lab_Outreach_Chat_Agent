@@ -1,3 +1,14 @@
+---
+title: Hickey Lab AI Assistant
+emoji: 🧬
+colorFrom: blue
+colorTo: purple
+sdk: streamlit
+sdk_version: 1.52.1
+app_file: app.py
+pinned: false
+---
+
 # Hickey Lab AI Assistant - Gemini File Search
 
 A Streamlit chatbot powered by **Google Gemini 2.5 Flash** and the **File Search API**.
