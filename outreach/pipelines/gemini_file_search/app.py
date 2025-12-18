@@ -27,7 +27,7 @@ import os
 import time
 import uuid
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import streamlit as st
 from google import genai
@@ -117,13 +117,19 @@ def build_prompt_with_context(new_question: str, history: list) -> str:
         return new_question
     
     # Get recent history (last N exchanges)
-    recent = history[-config.CONVERSATION_HISTORY_LENGTH * 2:]  # * 2 for user + assistant pairs
+    # Limit total history to prevent unbounded growth
+    max_messages = config.CONVERSATION_HISTORY_LENGTH * 2  # * 2 for user + assistant pairs
+    recent = history[-max_messages:] if len(history) > max_messages else history
     
     # Format history
     context_parts = []
     for msg in recent:
         role = "User" if msg["role"] == "user" else "Assistant"
-        context_parts.append(f"{role}: {msg['content']}")
+        # Truncate very long messages to prevent token explosion
+        content = msg['content']
+        if len(content) > 1000:
+            content = content[:1000] + "... [truncated]"
+        context_parts.append(f"{role}: {content}")
     
     # Combine with new question
     full_prompt = (
@@ -198,19 +204,42 @@ def get_response(question: str, history: list, session_id: str) -> tuple:
         response_time = time.time() - start_time
         error_msg = str(e)
         
+        # Try to extract usage info even from failed requests
+        # Some API errors still consume tokens
+        prompt_tokens = 0
+        response_tokens = 0
+        total_tokens = 0
+        
+        try:
+            if hasattr(e, 'usage_metadata'):
+                usage = e.usage_metadata
+                prompt_tokens = getattr(usage, 'prompt_token_count', 0)
+                response_tokens = getattr(usage, 'candidates_token_count', 0)
+                total_tokens = getattr(usage, 'total_token_count', 0)
+        except:
+            pass  # If we can't get usage, use zeros
+        
         # Log failed query
         cost_tracker.log_usage(
             session_id=session_id,
             question_length=len(question),
-            prompt_tokens=0,
-            response_tokens=0,
-            total_tokens=0,
+            prompt_tokens=prompt_tokens,
+            response_tokens=response_tokens,
+            total_tokens=total_tokens,
             response_time=response_time,
             success=False,
             error_msg=error_msg
         )
         
-        return f"❌ Error: {error_msg}", False, error_msg, None
+        # Provide user-friendly error messages
+        if "quota" in error_msg.lower():
+            return "⚠️ Service temporarily unavailable due to API quota limits. Please try again later.", False, error_msg, None
+        elif "rate limit" in error_msg.lower():
+            return "⚠️ Service is experiencing high demand. Please wait a moment and try again.", False, error_msg, None
+        elif "timeout" in error_msg.lower():
+            return "⚠️ Request timed out. Please try a shorter question or try again.", False, error_msg, None
+        else:
+            return f"❌ An error occurred: {error_msg}", False, error_msg, None
 
 
 def get_indexed_files() -> list[str]:
@@ -346,6 +375,14 @@ if "messages" not in st.session_state:
 
 if "query_times" not in st.session_state:
     st.session_state.query_times = []
+
+# Clean up old query times to prevent unbounded memory growth
+# Remove queries older than 24 hours
+if st.session_state.query_times:
+    cutoff_time = datetime.now() - timedelta(hours=24)
+    st.session_state.query_times = [
+        t for t in st.session_state.query_times if t > cutoff_time
+    ]
 
 # Get session ID
 session_id = get_session_id()

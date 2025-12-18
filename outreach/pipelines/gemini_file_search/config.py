@@ -60,6 +60,8 @@ ALERTS_ENABLED = True
 # ============================================================================
 
 # Number of previous messages to include for context
+# Note: Higher values provide better context but increase token usage and cost
+# Recommended: 5-10 for balance between context and cost
 CONVERSATION_HISTORY_LENGTH = 5
 
 # Enhanced system prompt with quality guidelines

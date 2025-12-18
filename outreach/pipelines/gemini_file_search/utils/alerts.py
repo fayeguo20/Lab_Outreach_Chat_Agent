@@ -97,8 +97,18 @@ class AlertSystem:
                 timeout=10
             )
             
-            return response.status_code == 200
+            if response.status_code != 200:
+                print(f"Warning: ntfy.sh returned status {response.status_code}")
+                return False
             
+            return True
+            
+        except requests.exceptions.Timeout:
+            print(f"Warning: ntfy.sh notification timed out (network slow?)")
+            return False
+        except requests.exceptions.ConnectionError:
+            print(f"Warning: Could not connect to ntfy.sh (network down?)")
+            return False
         except Exception as e:
             # Don't fail the app if alerts fail
             print(f"Warning: Failed to send alert: {e}")

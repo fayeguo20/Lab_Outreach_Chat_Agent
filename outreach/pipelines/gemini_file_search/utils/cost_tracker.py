@@ -34,7 +34,14 @@ class CostTracker:
     def __init__(self, log_dir: str = "logs"):
         """Initialize cost tracker with log directory."""
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            # Fallback to temp directory if can't create logs
+            import tempfile
+            self.log_dir = Path(tempfile.gettempdir()) / "hickeylab_logs"
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Warning: Could not create log directory, using temp: {self.log_dir}")
         self.usage_log = self.log_dir / "usage.jsonl"
     
     def calculate_cost(self, prompt_tokens: int, response_tokens: int) -> float:
@@ -59,7 +66,7 @@ class CostTracker:
         
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
-            "session_id": session_id[:8],  # Truncated for privacy
+            "session_id": session_id[:8] if len(session_id) >= 8 else session_id,  # Truncated for privacy
             "question_length": question_length,
             "prompt_tokens": prompt_tokens,
             "response_tokens": response_tokens,
@@ -70,8 +77,12 @@ class CostTracker:
             "error": error_msg
         }
         
-        with open(self.usage_log, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
+        try:
+            with open(self.usage_log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except (IOError, OSError) as e:
+            # If logging fails, don't crash the app
+            print(f"Warning: Could not write to usage log: {e}")
     
     def get_usage_stats(self, date: Optional[datetime] = None) -> Dict:
         """Get usage statistics for a specific date (defaults to today)."""

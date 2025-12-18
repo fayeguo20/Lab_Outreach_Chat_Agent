@@ -45,7 +45,13 @@ class RateLimiter:
         self.warning_threshold = warning_threshold
         
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            # Fallback to temp directory
+            import tempfile
+            self.log_dir = Path(tempfile.gettempdir()) / "hickeylab_logs"
+            self.log_dir.mkdir(parents=True, exist_ok=True)
         self.violation_log = self.log_dir / "rate_limits.jsonl"
     
     def check_rate_limit(
@@ -128,10 +134,14 @@ class RateLimiter:
         """Log a rate limit violation."""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
-            "session_id": session_id[:8],
+            "session_id": session_id[:8] if len(session_id) >= 8 else session_id,
             "limit_type": limit_type,
             "query_count": count
         }
         
-        with open(self.violation_log, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
+        try:
+            with open(self.violation_log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except (IOError, OSError) as e:
+            # Don't crash if logging fails
+            print(f"Warning: Could not log rate limit violation: {e}")

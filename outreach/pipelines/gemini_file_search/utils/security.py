@@ -47,7 +47,12 @@ class SecurityValidator:
     def __init__(self, log_dir: str = "logs"):
         """Initialize security validator."""
         self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            import tempfile
+            self.log_dir = Path(tempfile.gettempdir()) / "hickeylab_logs"
+            self.log_dir.mkdir(parents=True, exist_ok=True)
         self.security_log = self.log_dir / "security.jsonl"
     
     def validate_input(
@@ -111,11 +116,14 @@ class SecurityValidator:
         """Log suspicious input for security review."""
         log_entry = {
             "timestamp": datetime.utcnow().isoformat(),
-            "session_id": session_id[:8],
+            "session_id": session_id[:8] if len(session_id) >= 8 else session_id,
             "content_length": len(content),
             "content_preview": content[:100] + "..." if len(content) > 100 else content,
             "reason": reason
         }
         
-        with open(self.security_log, "a") as f:
-            f.write(json.dumps(log_entry) + "\n")
+        try:
+            with open(self.security_log, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except (IOError, OSError) as e:
+            print(f"Warning: Could not log security violation: {e}")
